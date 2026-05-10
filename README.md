@@ -16,8 +16,8 @@ And to run your script:
 
       File 	            Purpose
 
-      pyproject.toml   Defines your project and its dependencies(yfinance, pandas)
-      uv.lock           Locks exact versions of all packages (inccluding sub-dependencies
+      pyproject.toml    Defines your project and its dependencies(yfinance, pandas)
+      uv.lock           Locks exact versions of all packages (including sub-dependencies)
       .python-version   Pins Python version(3.9)
       .gitignore        Keeps the .venv folder out of git
 
