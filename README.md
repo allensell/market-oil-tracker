@@ -6,5 +6,17 @@ python script actually creates the new report html.  The lastest one from the la
 changes has been saved in this project.  To execute the python script just run the following 
 from the location of the script:
 
-     python3 ~/market_oil_tracker.py
-     
+Anyone who clones this repo can now get up and running with just:
+
+   uv sync 
+
+And to run your script:
+
+   uv run market_oil_tracker.py 
+
+File 	Purpose
+pyproject.toml	Defines your project and its dependencies(yfinance, pandas)
+uv.lock 	Locks exact versions of all packages (inccluding sub-dependencies
+.python-version	Pins Python version(3.9)
+.gitignore	Keeps the .venv folder out of git
+
