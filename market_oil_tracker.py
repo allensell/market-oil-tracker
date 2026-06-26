@@ -105,6 +105,18 @@ for name in ["S&P 500", "Dow Jones", "NASDAQ"]:
     ]
 
 # ── Generate HTML ─────────────────────────────────────────────────────────────
+import base64
+
+FAVICON_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">'
+    '<rect width="64" height="64" rx="12" fill="#0d1117"/>'
+    '<polyline points="8,40 20,28 28,34 40,18 56,24" fill="none" stroke="#58a6ff" '
+    'stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>'
+    '<path d="M46 34c6 7 6 13 0 17-6-4-6-10 0-17z" fill="#e8734a"/>'
+    '</svg>'
+)
+FAVICON_B64 = base64.b64encode(FAVICON_SVG.encode()).decode()
+
 chart_data_json   = json.dumps(chart_data)
 scatter_data_json = json.dumps(scatter_data)
 corr_json         = json.dumps(corr_rows)
@@ -118,6 +130,7 @@ html = f"""<!DOCTYPE html>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>US Markets vs. Oil Price</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,{FAVICON_B64}"/>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
   <style>
