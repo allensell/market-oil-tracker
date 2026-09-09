@@ -13,7 +13,7 @@ import yfinance as yf
 import pandas as pd
 
 # ── Config ────────────────────────────────────────────────────────────────────
-START_DATE = "2020-05-01"
+START_DATE = "2020-01-01"
 END_DATE   = datetime.today().strftime("%Y-%m-%d")
 
 TICKERS = {
