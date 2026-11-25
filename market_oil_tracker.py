@@ -1,7 +1,7 @@
 """
-US Stock Market vs. Oil Price Tracker
-Fetches daily open/close data for S&P 500, Dow Jones, NASDAQ, and WTI Crude Oil
-from January 2024 to today, then generates an interactive HTML report.
+US Stock Market vs. Oil & Crypto Tracker
+Fetches daily close data for S&P 500, Dow Jones, NASDAQ, WTI Crude Oil,
+Brent Crude, Bitcoin, and Ethereum, then generates an interactive HTML report.
 """
 
 import json
@@ -17,23 +17,28 @@ START_DATE = "2020-01-01"
 END_DATE   = datetime.today().strftime("%Y-%m-%d")
 
 TICKERS = {
-    "S&P 500":    "^GSPC",
-    "Dow Jones":  "^DJI",
-    "NASDAQ":     "^IXIC",
-    "WTI Oil":    "CL=F",
+    "S&P 500":     "^GSPC",
+    "Dow Jones":   "^DJI",
+    "NASDAQ":      "^IXIC",
+    "WTI Oil":     "CL=F",
     "Brent Crude": "BZ=F",
+    "Bitcoin":     "BTC-USD",
+    "Ethereum":    "ETH-USD",
 }
 
 COLORS = {
-    "S&P 500":    "#4e9af1",
-    "Dow Jones":  "#f1c84e",
-    "NASDAQ":     "#a084e8",
-    "WTI Oil":    "#e8734a",
+    "S&P 500":     "#4e9af1",
+    "Dow Jones":   "#f1c84e",
+    "NASDAQ":      "#a084e8",
+    "WTI Oil":     "#e8734a",
     "Brent Crude": "#f97316",
+    "Bitcoin":     "#f7931a",
+    "Ethereum":    "#627eea",
 }
 
-OIL_NAMES = ["WTI Oil", "Brent Crude"]
+OIL_NAMES    = ["WTI Oil", "Brent Crude"]
 MARKET_NAMES = ["S&P 500", "Dow Jones", "NASDAQ"]
+CRYPTO_NAMES = ["Bitcoin", "Ethereum"]
 
 # ── Fetch data (one ticker at a time to avoid lock contention) ────────────────
 import time
@@ -67,18 +72,34 @@ for name, ticker in TICKERS.items():
             else:
                 print(f"  WARNING – could not load {name}: {exc}")
 
-# ── Correlation table (daily % change vs each oil benchmark) ──────────────────
+# ── Correlation table ─────────────────────────────────────────────────────────
+# markets vs oil benchmarks
 corr_rows = []
 for oil_name in OIL_NAMES:
-    oil_pct = series[oil_name]["pct_change"].rename("oil")
+    ref_pct = series[oil_name]["pct_change"].rename("ref")
     for name in MARKET_NAMES:
-        merged = pd.concat([series[name]["pct_change"], oil_pct], axis=1).dropna()
-        merged.columns = ["market", "oil"]
-        corr = merged["market"].corr(merged["oil"])
-        corr_rows.append({"index": name, "oil": oil_name, "correlation": round(corr, 4), "n": len(merged)})
+        merged = pd.concat([series[name]["pct_change"], ref_pct], axis=1).dropna()
+        merged.columns = ["asset", "ref"]
+        corr = merged["asset"].corr(merged["ref"])
+        corr_rows.append({"index": name, "benchmark": oil_name, "group": "oil", "correlation": round(corr, 4), "n": len(merged)})
 
-# Keep WTI oil_pct for scatter (default)
-oil_pct = series["WTI Oil"]["pct_change"].rename("oil")
+# crypto vs markets
+for crypto_name in CRYPTO_NAMES:
+    ref_pct = series[crypto_name]["pct_change"].rename("ref")
+    for name in MARKET_NAMES:
+        merged = pd.concat([series[name]["pct_change"], ref_pct], axis=1).dropna()
+        merged.columns = ["asset", "ref"]
+        corr = merged["asset"].corr(merged["ref"])
+        corr_rows.append({"index": name, "benchmark": crypto_name, "group": "crypto", "correlation": round(corr, 4), "n": len(merged)})
+
+# crypto vs oil
+for crypto_name in CRYPTO_NAMES:
+    ref_pct = series[crypto_name]["pct_change"].rename("ref")
+    for oil_name in OIL_NAMES:
+        merged = pd.concat([series[oil_name]["pct_change"], ref_pct], axis=1).dropna()
+        merged.columns = ["asset", "ref"]
+        corr = merged["asset"].corr(merged["ref"])
+        corr_rows.append({"index": oil_name, "benchmark": crypto_name, "group": "crypto_oil", "correlation": round(corr, 4), "n": len(merged)})
 
 # ── Build JSON for chart.js ───────────────────────────────────────────────────
 def df_to_json(df, key):
@@ -95,20 +116,20 @@ for name, df in series.items():
         "pct_change": df_to_json(df, "pct_change"),
     }
 
-# Scatter: oil % change (x) vs market % change (y) — per market and per oil benchmark
+# Scatter: x-axis = oil or crypto % change, y-axis = market % change
 scatter_data = {}
-for oil_name in OIL_NAMES:
-    oil_s = series[oil_name]["pct_change"].rename("oil")
-    scatter_data[oil_name] = {}
+for x_name in OIL_NAMES + CRYPTO_NAMES:
+    x_pct = series[x_name]["pct_change"].rename("xval")
+    scatter_data[x_name] = {}
     for name in MARKET_NAMES:
         merged = pd.concat([
             series[name]["pct_change"].rename("market"),
             series[name]["close"].rename("close"),
-            oil_s,
+            x_pct,
         ], axis=1).dropna()
-        scatter_data[oil_name][name] = [
+        scatter_data[x_name][name] = [
             {
-                "x":     round(float(row["oil"]), 3),
+                "x":     round(float(row["xval"]), 3),
                 "y":     round(float(row["market"]), 3),
                 "date":  str(d.date()),
                 "close": round(float(row["close"]), 2),
@@ -141,7 +162,7 @@ html = f"""<!DOCTYPE html>
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>US Markets vs. Oil Price</title>
+  <title>US Markets vs. Oil &amp; Crypto</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,{FAVICON_B64}"/>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
@@ -175,7 +196,7 @@ html = f"""<!DOCTYPE html>
 </head>
 <body>
 
-<h1>US Markets vs. Oil Price</h1>
+<h1>US Markets vs. Oil &amp; Crypto</h1>
 <p class="subtitle">Daily open &amp; close data &mdash; {start_label} through {end_label}</p>
 
 <!-- ── Tab 1: Price History ───────────────────────────────────────────────── -->
@@ -187,11 +208,13 @@ html = f"""<!DOCTYPE html>
     <button class="tab-btn" onclick="showPrice('NASDAQ',this)">NASDAQ</button>
     <button class="tab-btn" onclick="showPrice('WTI Oil',this)">WTI Oil (USD/bbl)</button>
     <button class="tab-btn" onclick="showPrice('Brent Crude',this)">Brent Crude (USD/bbl)</button>
+    <button class="tab-btn" onclick="showPrice('Bitcoin',this)">Bitcoin (USD)</button>
+    <button class="tab-btn" onclick="showPrice('Ethereum',this)">Ethereum (USD)</button>
   </div>
   <canvas id="priceChart" height="90"></canvas>
 </div>
 
-<!-- ── Tab 2: Daily % Change ─────────────────────────────────────────────── -->
+<!-- ── Tab 2: Daily % Change — Markets vs. Oil ───────────────────────────── -->
 <div class="card">
   <div class="section-title">Daily % Change — Markets vs. Oil</div>
   <div class="legend-row" id="pctLegend"></div>
@@ -199,30 +222,42 @@ html = f"""<!DOCTYPE html>
   <p class="note">Lines show each index's daily % change. WTI Oil is dashed orange; Brent Crude is dashed amber.</p>
 </div>
 
-<!-- ── Tab 3: Scatter ────────────────────────────────────────────────────── -->
+<!-- ── Tab 3: Daily % Change — Crypto ────────────────────────────────────── -->
 <div class="card">
-  <div class="section-title">Oil % Change vs. Market % Change (Scatter)</div>
+  <div class="section-title">Daily % Change — Crypto vs. Markets</div>
+  <div class="legend-row" id="cryptoLegend"></div>
+  <canvas id="cryptoChart" height="100"></canvas>
+  <p class="note">Bitcoin is dashed orange; Ethereum is dashed purple. Market indices shown as solid lines for reference.</p>
+</div>
+
+<!-- ── Tab 4: Scatter ────────────────────────────────────────────────────── -->
+<div class="card">
+  <div class="section-title">X vs. Market % Change (Scatter)</div>
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
-    <div class="tabs" id="oilTabs">
-      <button class="tab-btn active" onclick="showScatter(currentMarket,'WTI Oil',this,'oil')">WTI Oil</button>
-      <button class="tab-btn" onclick="showScatter(currentMarket,'Brent Crude',this,'oil')">Brent Crude</button>
+    <div class="tabs" id="xAxisTabs">
+      <button class="tab-btn active" onclick="showScatter(currentMarket,'WTI Oil',this,'xaxis')">WTI Oil</button>
+      <button class="tab-btn" onclick="showScatter(currentMarket,'Brent Crude',this,'xaxis')">Brent Crude</button>
+      <button class="tab-btn" onclick="showScatter(currentMarket,'Bitcoin',this,'xaxis')">Bitcoin</button>
+      <button class="tab-btn" onclick="showScatter(currentMarket,'Ethereum',this,'xaxis')">Ethereum</button>
     </div>
     <div class="tabs" id="scatterTabs">
-      <button class="tab-btn active" onclick="showScatter('S&P 500',currentOil,this,'market')">S&amp;P 500</button>
-      <button class="tab-btn" onclick="showScatter('Dow Jones',currentOil,this,'market')">Dow Jones</button>
-      <button class="tab-btn" onclick="showScatter('NASDAQ',currentOil,this,'market')">NASDAQ</button>
+      <button class="tab-btn active" onclick="showScatter('S&P 500',currentXAxis,this,'market')">S&amp;P 500</button>
+      <button class="tab-btn" onclick="showScatter('Dow Jones',currentXAxis,this,'market')">Dow Jones</button>
+      <button class="tab-btn" onclick="showScatter('NASDAQ',currentXAxis,this,'market')">NASDAQ</button>
     </div>
   </div>
   <canvas id="scatterChart" height="90"></canvas>
-  <p class="note">Each dot = one trading day. X-axis = oil daily % change; Y-axis = market index daily % change.</p>
+  <p class="note">Each dot = one trading day. X-axis = selected asset daily % change; Y-axis = market index daily % change.</p>
 </div>
 
 <!-- ── Correlation Table ─────────────────────────────────────────────────── -->
 <div class="card">
-  <div class="section-title">Pearson Correlation: Daily % Change (Market vs. Oil Benchmark)</div>
+  <div class="section-title">Pearson Correlation: Daily % Change</div>
   <div class="tabs" id="corrTabs" style="margin-bottom:16px;">
-    <button class="tab-btn active" onclick="showCorr('WTI Oil',this)">WTI Oil</button>
-    <button class="tab-btn" onclick="showCorr('Brent Crude',this)">Brent Crude</button>
+    <button class="tab-btn active" onclick="showCorr('WTI Oil',this)">Markets vs WTI</button>
+    <button class="tab-btn" onclick="showCorr('Brent Crude',this)">Markets vs Brent</button>
+    <button class="tab-btn" onclick="showCorr('Bitcoin',this)">Markets vs Bitcoin</button>
+    <button class="tab-btn" onclick="showCorr('Ethereum',this)">Markets vs Ethereum</button>
   </div>
   <table class="corr-table" id="corrTable"></table>
   <p class="note">Correlation ranges from &minus;1 (perfect inverse) to +1 (perfect positive). Values near 0 indicate little linear relationship.</p>
@@ -270,46 +305,66 @@ function showPrice(name, btn) {{
   }});
 }}
 
-// ── % Change chart ───────────────────────────────────────────────────────────
+// ── % Change chart — Markets vs Oil ──────────────────────────────────────────
 (function buildPctChart() {{
   const indices = ['S&P 500','Dow Jones','NASDAQ'];
   const lineColors = {{ 'S&P 500': '#4e9af1', 'Dow Jones': '#f1c84e', 'NASDAQ': '#a084e8' }};
-
   const legendEl = document.getElementById('pctLegend');
   [...indices, 'WTI Oil', 'Brent Crude'].forEach(n => {{
     legendEl.innerHTML += `<div class="legend-item"><div class="legend-dot" style="background:${{COLORS[n]}}"></div>${{n}}</div>`;
   }});
-
   const datasets = indices.map((name, i) => ({{
     type: 'line', label: name, data: DATA[name].pct_change,
     borderColor: lineColors[name], backgroundColor: 'transparent',
     borderWidth: 1.5, pointRadius: 0, tension: 0.1, order: i + 2,
   }}));
-
-  datasets.push({{
-    type: 'line', label: 'WTI Oil', data: DATA['WTI Oil'].pct_change,
+  datasets.push({{ type: 'line', label: 'WTI Oil', data: DATA['WTI Oil'].pct_change,
     borderColor: COLORS['WTI Oil'], backgroundColor: 'transparent',
-    borderWidth: 2.5, borderDash: [4, 3], pointRadius: 0, tension: 0.1, order: 1,
-  }});
-
-  datasets.push({{
-    type: 'line', label: 'Brent Crude', data: DATA['Brent Crude'].pct_change,
+    borderWidth: 2.5, borderDash: [4, 3], pointRadius: 0, tension: 0.1, order: 1 }});
+  datasets.push({{ type: 'line', label: 'Brent Crude', data: DATA['Brent Crude'].pct_change,
     borderColor: COLORS['Brent Crude'], backgroundColor: 'transparent',
-    borderWidth: 2.5, borderDash: [2, 4], pointRadius: 0, tension: 0.1, order: 0,
-  }});
-
+    borderWidth: 2.5, borderDash: [2, 4], pointRadius: 0, tension: 0.1, order: 0 }});
   const ctx = document.getElementById('pctChart').getContext('2d');
   new Chart(ctx, {{
     type: 'line', data: {{ datasets }},
     options: {{
-      responsive: true,
-      interaction: {{ mode: 'index', intersect: false }},
-      plugins: {{
-        legend: {{ display: false }},
-        tooltip: {{ callbacks: {{
-          label: ctx => ` ${{ctx.dataset.label}}: ${{ctx.parsed.y >= 0 ? '+' : ''}}${{ctx.parsed.y.toFixed(2)}}%`
-        }} }}
-      }},
+      responsive: true, interaction: {{ mode: 'index', intersect: false }},
+      plugins: {{ legend: {{ display: false }},
+        tooltip: {{ callbacks: {{ label: ctx => ` ${{ctx.dataset.label}}: ${{ctx.parsed.y >= 0 ? '+' : ''}}${{ctx.parsed.y.toFixed(2)}}%` }} }} }},
+      scales: {{
+        x: {{ type: 'time', time: {{ unit: 'month' }}, ticks: {{ color: '#8b949e' }}, grid: {{ color: '#21262d' }} }},
+        y: {{ ticks: {{ color: '#8b949e', callback: v => (v>0?'+':'')+v.toFixed(1)+'%' }}, grid: {{ color: '#21262d' }} }}
+      }}
+    }}
+  }});
+}})();
+
+// ── % Change chart — Crypto ───────────────────────────────────────────────────
+(function buildCryptoChart() {{
+  const indices = ['S&P 500','Dow Jones','NASDAQ'];
+  const lineColors = {{ 'S&P 500': '#4e9af1', 'Dow Jones': '#f1c84e', 'NASDAQ': '#a084e8' }};
+  const legendEl = document.getElementById('cryptoLegend');
+  [...indices, 'Bitcoin', 'Ethereum'].forEach(n => {{
+    legendEl.innerHTML += `<div class="legend-item"><div class="legend-dot" style="background:${{COLORS[n]}}"></div>${{n}}</div>`;
+  }});
+  const datasets = indices.map((name, i) => ({{
+    type: 'line', label: name, data: DATA[name].pct_change,
+    borderColor: lineColors[name], backgroundColor: 'transparent',
+    borderWidth: 1.2, pointRadius: 0, tension: 0.1, order: i + 2,
+  }}));
+  datasets.push({{ type: 'line', label: 'Bitcoin', data: DATA['Bitcoin'].pct_change,
+    borderColor: COLORS['Bitcoin'], backgroundColor: 'transparent',
+    borderWidth: 2.5, borderDash: [4, 3], pointRadius: 0, tension: 0.1, order: 1 }});
+  datasets.push({{ type: 'line', label: 'Ethereum', data: DATA['Ethereum'].pct_change,
+    borderColor: COLORS['Ethereum'], backgroundColor: 'transparent',
+    borderWidth: 2.5, borderDash: [2, 4], pointRadius: 0, tension: 0.1, order: 0 }});
+  const ctx = document.getElementById('cryptoChart').getContext('2d');
+  new Chart(ctx, {{
+    type: 'line', data: {{ datasets }},
+    options: {{
+      responsive: true, interaction: {{ mode: 'index', intersect: false }},
+      plugins: {{ legend: {{ display: false }},
+        tooltip: {{ callbacks: {{ label: ctx => ` ${{ctx.dataset.label}}: ${{ctx.parsed.y >= 0 ? '+' : ''}}${{ctx.parsed.y.toFixed(2)}}%` }} }} }},
       scales: {{
         x: {{ type: 'time', time: {{ unit: 'month' }}, ticks: {{ color: '#8b949e' }}, grid: {{ color: '#21262d' }} }},
         y: {{ ticks: {{ color: '#8b949e', callback: v => (v>0?'+':'')+v.toFixed(1)+'%' }}, grid: {{ color: '#21262d' }} }}
@@ -321,25 +376,25 @@ function showPrice(name, btn) {{
 // ── Scatter chart ─────────────────────────────────────────────────────────────
 let scatterChart = null;
 let currentMarket = 'S&P 500';
-let currentOil = 'WTI Oil';
+let currentXAxis  = 'WTI Oil';
 
-function showScatter(market, oil, btn, which) {{
+function showScatter(market, xaxis, btn, which) {{
   if (which === 'market') {{
     currentMarket = market;
     document.querySelectorAll('#scatterTabs .tab-btn').forEach(b => b.classList.remove('active'));
   }} else {{
-    currentOil = oil;
-    document.querySelectorAll('#oilTabs .tab-btn').forEach(b => b.classList.remove('active'));
+    currentXAxis = xaxis;
+    document.querySelectorAll('#xAxisTabs .tab-btn').forEach(b => b.classList.remove('active'));
   }}
   btn.classList.add('active');
-  const pts = SDATA[currentOil][currentMarket];
+  const pts   = SDATA[currentXAxis][currentMarket];
   const color = COLORS[currentMarket];
   if (scatterChart) {{
     scatterChart.data.datasets[0].data  = pts;
     scatterChart.data.datasets[0].label = currentMarket;
     scatterChart.data.datasets[0].backgroundColor = color + '88';
     scatterChart.data.datasets[0].borderColor      = color;
-    scatterChart.options.scales.x.title.text = currentOil + ' Daily % Change';
+    scatterChart.options.scales.x.title.text = currentXAxis + ' Daily % Change';
     scatterChart.options.scales.y.title.text = currentMarket + ' Daily % Change';
     scatterChart.update();
     return;
@@ -347,41 +402,33 @@ function showScatter(market, oil, btn, which) {{
   const ctx = document.getElementById('scatterChart').getContext('2d');
   scatterChart = new Chart(ctx, {{
     type: 'scatter',
-    data: {{ datasets: [{{
-      label: currentMarket, data: pts,
+    data: {{ datasets: [{{ label: currentMarket, data: pts,
       backgroundColor: color + '88', borderColor: color,
-      borderWidth: 1, pointRadius: 4, pointHoverRadius: 6,
-    }}] }},
+      borderWidth: 1, pointRadius: 4, pointHoverRadius: 6 }}] }},
     options: {{
       responsive: true,
-      plugins: {{
-        legend: {{ display: false }},
-        tooltip: {{ callbacks: {{
-          label: ctx => {{
-            const d = ctx.raw;
-            return [`${{d.date}}`, `${{currentOil}}: ${{d.x>=0?'+':''}}${{d.x}}%  ${{currentMarket}}: ${{d.y>=0?'+':''}}${{d.y}}%`];
-          }}
-        }} }}
-      }},
+      plugins: {{ legend: {{ display: false }},
+        tooltip: {{ callbacks: {{ label: ctx => {{
+          const d = ctx.raw;
+          return [`${{d.date}}`, `${{currentXAxis}}: ${{d.x>=0?'+':''}}${{d.x}}%  ${{currentMarket}}: ${{d.y>=0?'+':''}}${{d.y}}%`];
+        }} }} }} }},
       scales: {{
-        x: {{ title: {{ display: true, text: currentOil + ' Daily % Change', color: '#8b949e' }},
-             ticks: {{ color: '#8b949e', callback: v => (v>0?'+':'')+v+'%' }},
-             grid: {{ color: '#21262d' }} }},
+        x: {{ title: {{ display: true, text: currentXAxis + ' Daily % Change', color: '#8b949e' }},
+             ticks: {{ color: '#8b949e', callback: v => (v>0?'+':'')+v+'%' }}, grid: {{ color: '#21262d' }} }},
         y: {{ title: {{ display: true, text: currentMarket + ' Daily % Change', color: '#8b949e' }},
-             ticks: {{ color: '#8b949e', callback: v => (v>0?'+':'')+v+'%' }},
-             grid: {{ color: '#21262d' }} }}
+             ticks: {{ color: '#8b949e', callback: v => (v>0?'+':'')+v+'%' }}, grid: {{ color: '#21262d' }} }}
       }}
     }}
   }});
 }}
 
 // ── Correlation table ─────────────────────────────────────────────────────────
-function showCorr(oilName, btn) {{
+function showCorr(benchmarkName, btn) {{
   document.querySelectorAll('#corrTabs .tab-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  const rows = CORR.filter(r => r.oil === oilName);
+  const rows = CORR.filter(r => r.benchmark === benchmarkName);
   const t = document.getElementById('corrTable');
-  t.innerHTML = `<thead><tr><th>Index</th><th>Correlation with ${{oilName}}</th><th>Trading Days</th><th>Interpretation</th></tr></thead><tbody></tbody>`;
+  t.innerHTML = `<thead><tr><th>Index</th><th>Correlation with ${{benchmarkName}}</th><th>Trading Days</th><th>Interpretation</th></tr></thead><tbody></tbody>`;
   const body = t.querySelector('tbody');
   rows.forEach(row => {{
     const c = row.correlation;
@@ -391,9 +438,7 @@ function showCorr(oilName, btn) {{
     const barColor = pos ? '#3fb950' : '#f85149';
     let label = abs < 0.1 ? 'Very weak' : abs < 0.3 ? 'Weak' : abs < 0.5 ? 'Moderate' : abs < 0.7 ? 'Strong' : 'Very strong';
     label += pos ? ' positive' : ' negative';
-    const pill = pos
-      ? `<span class="pill pos">+${{c}}</span>`
-      : `<span class="pill neg">${{c}}</span>`;
+    const pill = pos ? `<span class="pill pos">+${{c}}</span>` : `<span class="pill neg">${{c}}</span>`;
     body.innerHTML += `<tr>
       <td style="color:${{COLORS[row.index]}};font-weight:700">${{row.index}}</td>
       <td>${{pill}} <span class="corr-bar-bg"><span class="corr-bar" style="width:${{barW}}%;background:${{barColor}}"></span></span></td>
